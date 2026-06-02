@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>休假管理日历</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lunar-javascript/1.7.4/lunar.min.js"></script>
+    <style>
+        :root {
+            --bs-primary: #4361ee;
+            --bs-primary-rgb: 67, 97, 238;
+        }
+        body { background-color: #f8f9fa; font-family: "SimSun", "NSimSun", "宋体", serif; }
+        .main-wrapper { display: flex; max-width: 1600px; margin: 30px auto; gap: 20px; padding: 0 20px; }
+        .calendar-container { flex: 3; background: #fff; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); overflow: hidden; }
+        .stats-container { flex: 1; background: #fff; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); padding: 20px; display: flex; flex-direction: column; }
+        
+        .calendar-header { background: var(--bs-primary); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; }
+        .month-nav { display: flex; align-items: center; gap: 15px; }
+        .month-nav h2 { margin: 0; font-weight: 600; min-width: 180px; text-align: center; }
+        .btn-nav { background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .btn-nav:hover { background: rgba(255,255,255,0.3); transform: scale(1.1); }
+        
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); border-top: 1px solid #eee; }
+        .weekday-label { background: #f1f3f5; padding: 10px; text-align: center; font-weight: bold; color: #495057; border-bottom: 1px solid #eee; }
+        .calendar-day { min-height: 140px; padding: 10px; border-right: 1px solid #eee; border-bottom: 1px solid #eee; position: relative; transition: background 0.2s; cursor: pointer; }
+        .calendar-day:nth-child(7n) { border-right: none; }
+        .calendar-day.other-month { background-color: #fcfcfc; color: #adb5bd; }
+        .calendar-day.today { background-color: #f0f4ff; }
+        .calendar-day.sunday-off { background-color: #fafafa; }
+        .calendar-day:hover:not(.sunday-off) { background-color: #f8f9ff; }
+        
+        .sunday-label { 
+            position: absolute; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            color: #ced4da; 
+            font-size: 1.5rem; 
+            font-weight: bold; 
+            letter-spacing: 5px;
+            user-select: none;
+            pointer-events: none;
+        }
+        
+        .day-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+        .day-number { font-weight: bold; font-size: 1.2rem; flex-shrink: 0; }
+        .lunar-info { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; text-align: right; }
+        .lunar-text { font-size: 0.9rem; color: #495057; font-weight: 500; white-space: nowrap; }
+        .festival-text { font-size: 0.85rem; color: #e63946; font-weight: bold; margin-top: 2px; text-align: right; overflow: visible; white-space: normal; line-height: 1.1; max-width: none; }
+
+        .today .day-number { color: var(--bs-primary); font-size: 1.5rem; font-weight: 900; position: relative; }
+        .today .day-number::after { content: '今天'; font-size: 0.8rem; background: var(--bs-primary); color: white; padding: 2px 8px; border-radius: 4px; margin-left: 5px; vertical-align: middle; font-weight: bold; }
+        .today .lunar-text { color: var(--bs-primary); font-weight: bold; font-size: 1rem; }
+
+        .leave-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 30px; }
+        .leave-badge { border-radius: 4px; padding: 2px 8px; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; border-width: 1px; border-style: solid; }
+        .leave-badge.annual { background: #e7f1ff; color: #007bff; border-color: #b3d7ff; }
+        .leave-badge.holiday { background: #e6fffa; color: #059669; border-color: #b2f5ea; }
+        .leave-badge:hover { filter: brightness(0.95); }
+        .delete-btn { color: #dc3545; cursor: pointer; font-size: 0.8rem; margin-left: 5px; }
+
+        .add-btn { position: absolute; bottom: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%; background: #eee; border: none; color: #666; display: flex; align-items: center; justify-content: center; transition: all 0.2s; cursor: pointer; }
+        .add-btn:hover { background: var(--bs-primary); color: white; }
+
+        /* Modal Customization */
+        .modal-content { border-radius: 12px; border: none; box-shadow: 0 15px 50px rgba(0,0,0,0.1); }
+        .modal-header { border-bottom: 1px solid #f0f0f0; padding: 20px; }
+        .modal-footer { border-top: 1px solid #f0f0f0; padding: 15px 20px; }
+    </style>
+</head>
+<body>
+
+<div class="main-wrapper">
+    <!-- 左侧日历 -->
+    <div class="calendar-container">
+        <!-- 顶部导航 -->
+        <div class="calendar-header">
+            <div class="month-nav">
+                <button class="btn-nav" onclick="changeMonth(-1)"><i class="bi bi-chevron-left"></i></button>
+                <h2 id="currentMonthDisplay">2026年 6月</h2>
+                <button class="btn-nav" onclick="changeMonth(1)"><i class="bi bi-chevron-right"></i></button>
+            </div>
+            <div>
+                <button class="btn btn-light btn-sm" onclick="goToToday()">回到今天</button>
+            </div>
+        </div>
+
+        <!-- 星期表头 -->
+        <div class="calendar-grid">
+            <div class="weekday-label">周日</div>
+            <div class="weekday-label">周一</div>
+            <div class="weekday-label">周二</div>
+            <div class="weekday-label">周三</div>
+            <div class="weekday-label">周四</div>
+            <div class="weekday-label">周五</div>
+            <div class="weekday-label">周六</div>
+        </div>
+
+        <!-- 日历主体 -->
+        <div class="calendar-grid" id="calendarBody">
+            <!-- 动态生成日期 -->
+        </div>
+    </div>
+
+    <!-- 右侧统计表 -->
+    <div class="stats-container">
+        <h4 class="mb-3 d-flex justify-content-between align-items-center">
+            <span>📊 年假统计</span>
+            <button class="btn btn-primary btn-sm" onclick="openColleagueModal()">
+                <i class="bi bi-person-plus"></i> 添加同事
+            </button>
+        </h4>
+        <div class="table-responsive flex-grow-1">
+            <table class="table table-hover align-middle text-center small">
+                <thead class="table-light">
+                    <tr>
+                        <th>姓名</th>
+                        <th>总天数</th>
+                        <th>已用</th>
+                        <th>剩余</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="statsTableBody">
+                    <!-- 动态生成统计数据 -->
+                </tbody>
+            </table>
+        </div>
+        <div class="mt-2 text-muted x-small">
+            * 自动计算日历中所有已记录的休假天数
+        </div>
+    </div>
+</div>
+
+<!-- 添加/编辑同事弹窗 -->
+<div class="modal fade" id="colleagueModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="colleagueModalTitle">添加同事</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">姓名</label>
+                    <input type="text" id="newColleagueName" class="form-control" placeholder="请输入姓名">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">起始年假天数</label>
+                    <input type="number" id="initialLeaveDays" class="form-control" value="0" min="0">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveColleague()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加休假人员弹窗 -->
+<div class="modal fade" id="addLeaveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加休假人员</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col">
+                        <label class="form-label small text-muted">开始日期</label>
+                        <input type="date" id="startDate" class="form-control form-control-sm" readonly>
+                    </div>
+                    <div class="col">
+                        <label class="form-label small text-muted">结束日期 (可选连续)</label>
+                        <input type="date" id="endDate" class="form-control form-control-sm">
+                    </div>
+                </div>
+                <div class="form-group mb-3">
+                    <label class="form-label">同事姓名</label>
+                    <input type="text" id="colleagueName" class="form-control" placeholder="请输入姓名" autofocus onkeyup="if(event.keyCode===13) saveLeave()">
+                </div>
+                <div class="form-group">
+                    <label class="form-label d-block">休假类型</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="leaveType" id="typeAnnual" value="annual" checked>
+                        <label class="btn btn-outline-primary" for="typeAnnual">年假 (扣减天数)</label>
+                        
+                        <input type="radio" class="btn-check" name="leaveType" id="typeHoliday" value="holiday">
+                        <label class="btn btn-outline-success" for="typeHoliday">节日假 (不扣天数)</label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveLeave()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除确认弹窗 -->
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                确定要移除此休假人员吗？
+            </div>
+            <div class="modal-footer border-0 pt-0 justify-content-center">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">确定删除</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    let currentYear, currentMonth;
+    let selectedDate = null;
+    let deleteTarget = null; // 用于存放待删除的数据信息
+    let leaveData = JSON.parse(localStorage.getItem('leaveData')) || {};
+    let colleagues = JSON.parse(localStorage.getItem('colleagues')) || {}; // { name: { "2026": { total: 20 } } }
+    
+    const modal = new bootstrap.Modal(document.getElementById('addLeaveModal'));
+    const deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+    const colleagueModal = new bootstrap.Modal(document.getElementById('colleagueModal'));
+
+    function init() {
+        // 数据迁移：将旧的字符串名数组转换为对象数组
+        let migrated = false;
+        for (const date in leaveData) {
+            leaveData[date] = leaveData[date].map(item => {
+                if (typeof item === 'string') {
+                    migrated = true;
+                    return { name: item, type: 'annual' }; // 旧数据默认视为年假
+                }
+                return item;
+            });
+        }
+        if (migrated) localStorage.setItem('leaveData', JSON.stringify(leaveData));
+
+        const now = new Date();
+        currentYear = now.getFullYear();
+        currentMonth = now.getMonth();
+        renderCalendar();
+        renderStatsTable();
+    }
+
+    // 统计逻辑：计算某人在特定年份的总年假天数 (排除周日，且仅限年假类型)
+    function calculateUsedDays(name, year) {
+        let count = 0;
+        const prefix = `${year}-`;
+        for (const dateStr in leaveData) {
+            if (dateStr.startsWith(prefix)) {
+                // 查找该同事在该日期的记录
+                const record = leaveData[dateStr].find(r => r.name === name);
+                if (record && record.type === 'annual') {
+                    // 解析日期并检查是否为周日
+                    const parts = dateStr.split('-');
+                    const d = new Date(parts[0], parts[1] - 1, parts[2]);
+                    if (d.getDay() !== 0) { // 0 代表周日
+                        count++;
+                    }
+                }
+            }
+        }
+        return count;
+    }
+
+    function renderStatsTable() {
+        const tbody = document.getElementById('statsTableBody');
+        tbody.innerHTML = '';
+        
+        // 更新统计表标题显示年份
+        const titleSpan = document.querySelector('.stats-container h4 span');
+        titleSpan.innerText = `📊 ${currentYear}年年假统计`;
+        
+        const sortedNames = Object.keys(colleagues).sort();
+        
+        sortedNames.forEach(name => {
+            const yearData = colleagues[name][currentYear] || { total: 0 };
+            const used = calculateUsedDays(name, currentYear);
+            const remaining = yearData.total - used;
+            
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${name}</strong></td>
+                <td>${yearData.total}</td>
+                <td><span class="text-danger">${used}</span></td>
+                <td><span class="badge ${remaining < 0 ? 'bg-danger' : 'bg-success'}">${remaining}</span></td>
+                <td>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-secondary btn-sm p-1 px-2" onclick="editColleague('${name}')" title="编辑"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-outline-danger btn-sm p-1 px-2" onclick="removeColleague('${name}')" title="删除"><i class="bi bi-trash"></i></button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        if (sortedNames.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-muted">暂无同事年假数据</td></tr>';
+        }
+    }
+
+    function openColleagueModal() {
+        document.getElementById('colleagueModalTitle').innerText = `添加同事 (${currentYear}年)`;
+        document.getElementById('newColleagueName').value = '';
+        document.getElementById('newColleagueName').readOnly = false;
+        document.getElementById('initialLeaveDays').value = '0';
+        colleagueModal.show();
+    }
+
+    function editColleague(name) {
+        document.getElementById('colleagueModalTitle').innerText = `编辑同事 (${currentYear}年)`;
+        document.getElementById('newColleagueName').value = name;
+        document.getElementById('newColleagueName').readOnly = true;
+        const yearData = colleagues[name][currentYear] || { total: 0 };
+        document.getElementById('initialLeaveDays').value = yearData.total;
+        colleagueModal.show();
+    }
+
+    function saveColleague() {
+        const name = document.getElementById('newColleagueName').value.trim();
+        const total = parseInt(document.getElementById('initialLeaveDays').value) || 0;
+        
+        if (!name) {
+            alert('请输入姓名');
+            return;
+        }
+        
+        if (!colleagues[name]) {
+            colleagues[name] = {};
+        }
+        
+        colleagues[name][currentYear] = { total: total };
+        localStorage.setItem('colleagues', JSON.stringify(colleagues));
+        renderStatsTable();
+        colleagueModal.hide();
+    }
+
+    function removeColleague(name) {
+        if (confirm(`确定要删除同事 "${name}" 的年假统计数据吗？（不会删除其日历上的休假记录）`)) {
+            delete colleagues[name];
+            localStorage.setItem('colleagues', JSON.stringify(colleagues));
+            renderStatsTable();
+        }
+    }
+
+    function renderCalendar() {
+        const firstDay = new Date(currentYear, currentMonth, 1);
+        const lastDay = new Date(currentYear, currentMonth + 1, 0);
+        const prevLastDay = new Date(currentYear, currentMonth, 0);
+        
+        const startDay = firstDay.getDay(); // 0 (Sun) to 6 (Sat)
+        const totalDays = lastDay.getDate();
+        
+        document.getElementById('currentMonthDisplay').innerText = `${currentYear}年 ${currentMonth + 1}月`;
+        
+        const calendarBody = document.getElementById('calendarBody');
+        calendarBody.innerHTML = '';
+
+        // 上个月的剩余日期
+        for (let i = startDay - 1; i >= 0; i--) {
+            const d = prevLastDay.getDate() - i;
+            const dateStr = formatDate(currentYear, currentMonth - 1, d);
+            calendarBody.appendChild(createDayElement(d, true, dateStr, currentYear, currentMonth - 1, d));
+        }
+
+        // 本月日期
+        const today = new Date();
+        for (let i = 1; i <= totalDays; i++) {
+            const isToday = today.getFullYear() === currentYear && today.getMonth() === currentMonth && today.getDate() === i;
+            const dateStr = formatDate(currentYear, currentMonth, i);
+            calendarBody.appendChild(createDayElement(i, false, dateStr, currentYear, currentMonth, i, isToday));
+        }
+
+        // 下个月的开始日期
+        const remaining = 42 - calendarBody.children.length; // 保持 6 行 (7*6=42)
+        for (let i = 1; i <= remaining; i++) {
+            const dateStr = formatDate(currentYear, currentMonth + 1, i);
+            calendarBody.appendChild(createDayElement(i, true, dateStr, currentYear, currentMonth + 1, i));
+        }
+    }
+
+    function formatDate(y, m, d) {
+        const date = new Date(y, m, d);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    function createDayElement(day, isOtherMonth, dateStr, y, m, d, isToday = false) {
+        const div = document.createElement('div');
+        
+        // 确保年月日正确处理（解决跨年或月份溢出问题）
+        const dateObj = new Date(y, m, d);
+        const dayOfWeek = dateObj.getDay(); // 0 是周日
+        const isSunday = dayOfWeek === 0;
+        
+        div.className = `calendar-day ${isOtherMonth ? 'other-month' : ''} ${isToday ? 'today' : ''} ${isSunday ? 'sunday-off' : ''}`;
+        
+        const realY = dateObj.getFullYear();
+        const realM = dateObj.getMonth() + 1; // Solar.fromYmd 需要 1-12 月
+        const realD = dateObj.getDate();
+
+        // 农历与节日逻辑
+        let lunarContent = '';
+        try {
+            const solar = Solar.fromYmd(realY, realM, realD);
+            const lunar = solar.getLunar();
+            
+            // 获取中国节日
+            let festivals = [...solar.getFestivals(), ...lunar.getFestivals()];
+            
+            // 获取美国节日 (手动定义常见的美国节日)
+            const usFestivals = getUSFestivals(realY, realM, realD);
+            festivals = [...festivals, ...usFestivals];
+            
+            const festival = festivals.length > 0 ? festivals[0] : '';
+            
+            lunarContent = `
+                <div class="lunar-info">
+                    ${festival ? `<div class="festival-text" title="${festivals.join(', ')}">${festival}</div>` : ''}
+                </div>
+            `;
+        } catch (e) {
+            console.error('Lunar calculation error:', e);
+        }
+        
+        let content = `
+            <div class="day-header">
+                <span class="day-number">${day}</span>
+                ${lunarContent}
+            </div>
+        `;
+
+        if (isSunday) {
+            content += `<div class="sunday-label">公休</div>`;
+        } else {
+            content += `<div class="leave-list">`;
+            const records = leaveData[dateStr] || [];
+            records.forEach((record, index) => {
+                const typeClass = record.type || 'annual';
+                const typeText = typeClass === 'annual' ? '年' : '节';
+                content += `
+                    <div class="leave-badge ${typeClass}" title="${typeClass === 'annual' ? '年假' : '节日假'}">
+                        <span><small class="opacity-75 me-1">[${typeText}]</small>${record.name}</span>
+                        <i class="bi bi-x delete-btn" onclick="event.stopPropagation(); deleteLeave('${dateStr}', ${index})"></i>
+                    </div>
+                `;
+            });
+            content += `</div>`;
+            content += `<button class="add-btn" onclick="event.stopPropagation(); openAddModal('${dateStr}')"><i class="bi bi-plus"></i></button>`;
+        }
+        
+        div.innerHTML = content;
+        if (!isSunday) {
+            div.onclick = () => openAddModal(dateStr);
+        } else {
+            div.style.cursor = 'default';
+        }
+        return div;
+    }
+
+    // 美国节日计算逻辑 (中文显示)
+     function getUSFestivals(y, m, d) {
+         const f = [];
+         const date = new Date(y, m - 1, d);
+         const dayOfWeek = date.getDay(); // 0 (Sun) to 6 (Sat)
+         
+         // 固定日期节日
+         if (m === 1 && d === 1) f.push("元旦");
+         if (m === 6 && d === 19) f.push("六月节");
+         if (m === 7 && d === 4) f.push("美国国庆");
+         if (m === 11 && d === 11) f.push("退伍军人节");
+         if (m === 12 && d === 25) f.push("圣诞节");
+ 
+         // 浮动日期节日
+         // 1月第3个周一: 马丁·路德·金纪念日
+         if (m === 1 && dayOfWeek === 1 && d > 14 && d <= 21) f.push("马丁路德金纪念日");
+         
+         // 2月第3个周一: 总统日
+         if (m === 2 && dayOfWeek === 1 && d > 14 && d <= 21) f.push("总统日");
+         
+         // 5月最后一个周一: 阵亡将士纪念日
+         if (m === 5 && dayOfWeek === 1 && d > 24) f.push("阵亡将士纪念日");
+         
+         // 9月第1个周一: 劳动节
+         if (m === 9 && dayOfWeek === 1 && d <= 7) f.push("美国劳动节");
+         
+         // 10月第2个周一: 哥伦布日
+         if (m === 10 && dayOfWeek === 1 && d > 7 && d <= 14) f.push("哥伦布日");
+         
+         // 11月第4个周四: 感恩节
+         if (m === 11 && dayOfWeek === 4 && d > 21 && d <= 28) f.push("感恩节");
+ 
+         return f;
+     }
+
+    function changeMonth(delta) {
+        const oldYear = currentYear;
+        currentMonth += delta;
+        if (currentMonth > 11) {
+            currentMonth = 0;
+            currentYear++;
+        } else if (currentMonth < 0) {
+            currentMonth = 11;
+            currentYear--;
+        }
+        renderCalendar();
+        if (oldYear !== currentYear) {
+            renderStatsTable(); // 跨年时更新统计表
+        }
+    }
+
+    function goToToday() {
+        const oldYear = currentYear;
+        const now = new Date();
+        currentYear = now.getFullYear();
+        currentMonth = now.getMonth();
+        renderCalendar();
+        if (oldYear !== currentYear) {
+            renderStatsTable(); // 跨年时更新统计表
+        }
+    }
+
+    function openAddModal(dateStr) {
+        selectedDate = dateStr;
+        document.getElementById('startDate').value = dateStr;
+        const endDateInput = document.getElementById('endDate');
+        endDateInput.value = dateStr;
+        endDateInput.min = dateStr; // 设置结束日期不能早于开始日期
+        document.getElementById('colleagueName').value = '';
+        document.getElementById('typeAnnual').checked = true; // 默认选中年假
+        modal.show();
+        setTimeout(() => document.getElementById('colleagueName').focus(), 500);
+    }
+
+    function saveLeave() {
+        const name = document.getElementById('colleagueName').value.trim();
+        const startStr = document.getElementById('startDate').value;
+        const endStr = document.getElementById('endDate').value;
+        const type = document.querySelector('input[name="leaveType"]:checked').value;
+        
+        if (!name) return;
+        
+        const dates = getDatesInRange(startStr, endStr);
+        
+        dates.forEach(dateKey => {
+            if (!leaveData[dateKey]) {
+                leaveData[dateKey] = [];
+            }
+            // 检查是否已有相同记录
+            const exists = leaveData[dateKey].some(r => r.name === name && r.type === type);
+            if (!exists) {
+                leaveData[dateKey].push({ name: name, type: type });
+            }
+        });
+
+        localStorage.setItem('leaveData', JSON.stringify(leaveData));
+        renderCalendar();
+        renderStatsTable(); // 同步更新统计表
+        modal.hide();
+    }
+
+    function getDatesInRange(startDate, endDate) {
+        // 使用年月日拆分的方式创建日期，确保使用本地时间避免时区偏移
+        const startParts = startDate.split('-');
+        const endParts = endDate.split('-');
+        
+        const start = new Date(startParts[0], startParts[1] - 1, startParts[2]);
+        const end = new Date(endParts[0], endParts[1] - 1, endParts[2]);
+        const dates = [];
+        
+        let current = new Date(start);
+        while (current <= end) {
+            dates.push(formatDate(current.getFullYear(), current.getMonth(), current.getDate()));
+            current.setDate(current.getDate() + 1);
+        }
+        return dates;
+    }
+
+    function deleteLeave(dateStr, index) {
+        // 不再使用原生 confirm，改用 Modal 弹窗
+        deleteTarget = { dateStr, index };
+        deleteModal.show();
+    }
+
+    // 监听确认删除按钮
+    document.getElementById('confirmDeleteBtn').onclick = function() {
+        if (deleteTarget) {
+            const { dateStr, index } = deleteTarget;
+            if (leaveData[dateStr] && leaveData[dateStr][index] !== undefined) {
+                leaveData[dateStr].splice(index, 1);
+                if (leaveData[dateStr].length === 0) {
+                    delete leaveData[dateStr];
+                }
+                localStorage.setItem('leaveData', JSON.stringify(leaveData));
+                renderCalendar();
+                renderStatsTable(); // 同步更新统计表
+            }
+        }
+        deleteModal.hide();
+        deleteTarget = null;
+    };
+
+    init();
+</script>
+
+</body>
+</html>
